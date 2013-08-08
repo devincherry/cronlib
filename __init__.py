@@ -47,7 +47,7 @@ class CronSchedule:
         Returns a printable string representation of the CronSchedule.
         Possible forms are 'cron', 'list'.
         """
-        if printFormat == 'list':
+        if form == 'list':
             tmpStr = "m   => " + self.minute \
                  + "\nh   => " + self.hour \
                  + "\ndom => " + self.day_of_month \
@@ -98,23 +98,17 @@ class Cronalyzer:
     def __init__(self):
         pass
 
-    def parseSystemCrontab(self):
+
+    def _parseCrontab(self, cron_f, cronType='user'):
         """
-        Parses the main system crontab, returning a list of CronJob objects.
+        Internal parser/cleaner function.
         """
-        systemCrontab = "/etc/crontab"
+        cronJobs = []
         commentRegex = _re.compile(r'^[\s]{0,}#.*')
         blankLineRegex = _re.compile(r'^[\s]{0,}$')
-        cronJobs = []
 
-        try:
-            crontab_f = open(systemCrontab, 'r')
-        except:
-            if MODULE_DEBUG == 1: 
-                _sys.stderr.write("\n\tERROR: failed to open file [%s] for read!\n\n" % systemCrontab)
-            return []
-
-        crontab = crontab_f.readlines()
+        # read each line, skipping comment/blank lines, and parse each cron job into a list
+        crontab = cron_f.readlines()
         for line in crontab:
             # skip useless lines
             m = commentRegex.match(line)
@@ -123,10 +117,10 @@ class Cronalyzer:
             m = blankLineRegex.match(line)
             if m:
                 continue
-
-            # if line splits into 7+ tokens, grab it
+        
+            # if the line splits into enough parts, parse it into a CronJob and add to the list
             parts = line.split()                
-            if len(parts) > 6:
+            if (cronType == 'system' and len(parts) > 6) or (cronType == 'user' and len(parts) > 5):
                 sched = CronSchedule(
                     minute = parts.pop(0), 
                     hour = parts.pop(0),
@@ -134,9 +128,16 @@ class Cronalyzer:
                     month = parts.pop(0),
                     dow = parts.pop(0)
                 )
+
+                # get username from file name for user crontab, from 6th field for system crontab
+                if cronType == 'user':
+                    cronUser = cron_f.name.split('/')[-1]
+                elif cronType == 'system':
+                    cronUser = parts.pop(0)
+
                 cronJobs.append(
                     CronJob(
-                        user = parts.pop(0),
+                        user = cronUser,
                         command = _string.join(parts).rstrip(),
                         schedule = sched
                     )
@@ -147,6 +148,22 @@ class Cronalyzer:
         return cronJobs
 
 
+    def parseSystemCrontab(self):
+        """
+        Parses the main system crontab, returning a list of CronJob objects.
+        """
+        systemCrontab = "/etc/crontab"
+
+        try:
+            crontab_f = open(systemCrontab, 'r')
+        except:
+            if MODULE_DEBUG == 1: 
+                _sys.stderr.write("\n\tERROR: failed to open file [%s] for read!\n\n" % systemCrontab)
+            return []
+
+        return self._parseCrontab(crontab_f, cronType='system')
+
+
     def parseUserCrontab(self, user=None):
         """
         Parses a user's crontab, returning a list of CronJob objects.
@@ -155,6 +172,7 @@ class Cronalyzer:
         Keyword arguments:
         user -- The user who's crontab should be parsed and returned. (optional)
         """
+        cronJobs = []
 
         # find the directory where user crons are stored
         if _os.path.isdir('/var/spool/cron/crontabs'):
@@ -166,66 +184,40 @@ class Cronalyzer:
                 _sys.stderr.write("\n\tERROR: failed to find user crons directory!\n\n")
             return []
 
-        commentRegex = _re.compile(r'^[\s]{0,}#.*')
-        blankLineRegex = _re.compile(r'^[\s]{0,}$')
-        cronJobs = []
-
-        # get the list of user crontab files, then iterate over and parse each.
+        # get the list of user crontab files
         try:
-            files = [f for item in _os.listdir(cronDir) if _os.path.isfile(_string.join(cronDir, item))]
+            files = [f for item in _os.listdir(cronDir) if _os.path.isfile(_string.join([cronDir, item], sep=''))]
         except:
             if MODULE_DEBUG == 1:
                 _sys.stderr.write("\n\tERROR: Could not list user crontabs directory!\n\n")
             return []
+
+        # if a user was specified, if user has a crontab, parse & return the CronJobs
         if user:
-            crontabFile = _string.join(cronDir, user)
-            if f in files:
+            crontabFile = _string.join([cronDir, user], sep='')
+            if user in files:
                 try:
                     crontab_f = open(crontabFile, 'r')
                 except:
                     if MODULE_DEBUG == 1:
                         _sys.stderr.write("\n\tERROR: failed to open crontab [%s] for read!\n\n" % crontabFile)
                     return []
+                return self._parseCrontab(crontab_f)
+            else:
+                return []
+
+        # if no user specified, read all users' crontabs and return complete list of CronJobs
         else:
             for f in files:
-                crontabFile = _string.join(cronDir, f)
+                crontabFile = _string.join([cronDir, f], sep='')
                 try:
                     crontab_f = open(crontabFile, 'r')
                 except:
                     if MODULE_DEBUG == 1: 
                         _sys.stderr.write("\n\tERROR: failed to open file [%s] for read!\n\n" % crontabFile)
                     return None
-        
-                crontab = crontab_f.readlines()
-                for line in crontab:
-                    # skip useless lines
-                    m = commentRegex.match(line)
-                    if m:
-                        continue
-                    m = blankLineRegex.match(line)
-                    if m:
-                        continue
-        
-                    # if line splits into 7+ tokens, grab it
-                    parts = line.split()                
-                    if len(parts) > 6:
-                        sched = CronSchedule(
-                            minute = parts.pop(0), 
-                            hour = parts.pop(0),
-                            dom = parts.pop(0),
-                            month = parts.pop(0),
-                            dow = parts.pop(0)
-                        )
-                        cronJobs.append(
-                            CronJob(
-                                user = f,
-                                command = _string.join(parts).rstrip(),
-                                schedule = sched
-                            )
-                        )
-                    else:
-                        # TODO: parse things like "SHELL=/bin/sh"
-                        pass
+
+                cronJobs = cronJobs + self._parseCrontab(crontab_f)
         return cronJobs
 
 
