@@ -7,8 +7,7 @@ and auditing functions, enabling a developer to quickly view/manage cron jobs.
     cron = cronlib.Cronalyzer()
     allCronJobs = cron.parseAllCrontabs()
     for cj in allCronJobs:
-        print cj.command
-        print cj.schedule.cronify()
+        print cj.schedule.toString(), cj.user, cj.command
     ...
 
 """
@@ -36,6 +35,16 @@ class CronSchedule:
     day_of_week = ''
 
     def __init__(self, minute, hour, dom, month, dow):
+        """
+        Instantiate a CronSchedule object.
+
+        ARGS:
+        - minute: The minute spec string (in crontab(5) format)
+        - hour: The hour spec string (in crontab(5) format)
+        - dom: The day-of-month spec string (in crontab(5) format)
+        - month: The month spec string (in crontab(5) format)
+        - dow: The day-of-week spec string (in crontab(5) format)
+        """
         self.minute = minute
         self.hour = hour
         self.day_of_month = dom
@@ -45,48 +54,71 @@ class CronSchedule:
     def toString(self, form='cron'):
         """
         Returns a printable string representation of the CronSchedule.
-        Possible forms are 'cron', 'list'.
+
+        KWARGS:
+        - form: The desired format of the string (optional). Forms include 'cron', 'list'.
         """
-        if form == 'list':
+        if form == 'cron':
+            return _string.join([self.minute, self.hour, self.day_of_month, self.month, self.day_of_week])
+        elif form == 'list':
             tmpStr = "m   => " + self.minute \
                  + "\nh   => " + self.hour \
                  + "\ndom => " + self.day_of_month \
                  + "\nmon => " + self.month \
                  + "\ndow => " + self.day_of_week + "\n"
             return tmpStr
-        return _string.join([self.minute, self.hour, self.day_of_month, self.month, self.day_of_week])
+        else:
+            return "cronlib: invalid format specified!"    
+
+#    def nextRun(self):
+#        """
+#        Return a string representation of the next scheduled run time. 
+#        """
+#        pass
 
 
 class CronJob:
     """
     A CronJob object holding a user, command, and CronSchedule for this CronJob.
     """
+    schedule = None
     user = '' 
     command = ''
-    schedule = None
+    source_file = ''
 
-    def __init__(self, user, command, schedule):
+    def __init__(self, user, command, schedule, src_file):
+        """
+        Instantiate a CronJob object.
+
+        ARGS:
+        - user: The user who this CronJob should run as.
+        - command: The full command-line for the CronJob.
+        - schedule: A CronSchedule object.
+        - src_file: The source file the CronJob was parsed from.
+        """
         self.user = user
         self.command = command
         self.schedule = schedule
+        self.source_file = src_file
 
-    def command(self):
+    def toString(self, form='system'):
         """
-        Prints the command which is run for this CronJob.
-        """
-        pass
+        Returns a string representation of the CronJob.
 
-    def schedule(self):
+        KWARGS:
+        - form: The desired format of the returned string. Forms include 'user', 'system', 'cronlib'.
         """
-        Prints the schedule for this CronJob in human-readable form.
-        """
-        pass
+        tmp = ''
 
-    def nextRun(self):
-        """
-        Prints the next scheduled run time for this CronJob in human-readable form.
-        """
-        pass
+        if form == 'user':
+            tmp = _string.join([self.schedule.toString(), self.user, self.command])
+        elif form == 'system':
+            tmp = _string.join([self.schedule.toString(), self.command])
+        else:
+            tmp = "## cronlib extracted from: %s\n" % self.source_file
+            tmp = tmp + _string.join([self.schedule.toString(), self.user, self.command])
+
+        return tmp
 
 
 class Cronalyzer:
@@ -129,7 +161,7 @@ class Cronalyzer:
                     dow = parts.pop(0)
                 )
 
-                # get username from file name for user crontab, from 6th field for system crontab
+                # get username from filename if user crontab, from 6th field if system crontab
                 if cronType == 'user':
                     cronUser = cron_f.name.split('/')[-1]
                 elif cronType == 'system':
@@ -139,37 +171,56 @@ class Cronalyzer:
                     CronJob(
                         user = cronUser,
                         command = _string.join(parts).rstrip(),
-                        schedule = sched
+                        schedule = sched,
+                        src_file = cron_f.name
                     )
                 )
             else:
                 # TODO: parse things like "SHELL=/bin/sh"
                 pass
+
         return cronJobs
 
 
-    def parseSystemCrontab(self):
+    def _getValidCrontabsFromDirs(self, dirlist):
         """
-        Parses the main system crontab, returning a list of CronJob objects.
+        Internal function to get a list of valid crontab files from a list of directories.
+        """
+        crontabs = []
+
+        for d in dirlist:
+            for f in _os.listdir(d):
+                # skip hidden files
+                if _re.search("^\..*", f) != None:
+                    continue
+                filePath = _string.join([d, f], sep='')
+                if _os.path.isfile(filePath):
+                    crontabs = crontabs + [filePath]
+
+        return crontabs
+
+
+    def parseSystemCrontabs(self):
+        """
+        Parses the main system crontabs, returning a list of CronJob objects.
         """
         systemCrontab = "/etc/crontab"
+        systemCronDirs = ["/etc/cron.d/"]
+        cronjobs = []
 
-        try:
-            crontab_f = open(systemCrontab, 'r')
-        except:
-            if MODULE_DEBUG == 1: 
-                _sys.stderr.write("\n\tERROR: failed to open file [%s] for read!\n\n" % systemCrontab)
-            return []
+        for f in self._getValidCrontabsFromDirs(systemCronDirs):
+            crontab_f = open(f, 'r')
+            cronjobs = cronjobs + self._parseCrontab(crontab_f, cronType='system')
 
-        return self._parseCrontab(crontab_f, cronType='system')
+        return cronjobs
 
 
-    def parseUserCrontab(self, user=None):
+    def parseUserCrontabs(self, user=None):
         """
         Parses a user's crontab, returning a list of CronJob objects.
         If no user is specified, returns a list of all users' CronJob objects on the system.
 
-        Keyword arguments:
+        KWARGS:
         user -- The user who's crontab should be parsed and returned. (optional)
         """
         cronJobs = []
@@ -182,42 +233,26 @@ class Cronalyzer:
         else:
             if MODULE_DEBUG == 1:
                 _sys.stderr.write("\n\tERROR: failed to find user crons directory!\n\n")
-            return []
-
-        # get the list of user crontab files
-        try:
-            files = [f for item in _os.listdir(cronDir) if _os.path.isfile(_string.join([cronDir, item], sep=''))]
-        except:
-            if MODULE_DEBUG == 1:
-                _sys.stderr.write("\n\tERROR: Could not list user crontabs directory!\n\n")
+            # FIXME: maybe we should be raising an exception...?
             return []
 
         # if a user was specified, if user has a crontab, parse & return the CronJobs
         if user:
             crontabFile = _string.join([cronDir, user], sep='')
-            if user in files:
-                try:
-                    crontab_f = open(crontabFile, 'r')
-                except:
-                    if MODULE_DEBUG == 1:
-                        _sys.stderr.write("\n\tERROR: failed to open crontab [%s] for read!\n\n" % crontabFile)
-                    return []
-                return self._parseCrontab(crontab_f)
+            if _os.path.isfile(crontabFile):
+                crontab_f = open(crontabFile, 'r')
+                return self._parseCrontab(crontab_f, cronType='user')
             else:
                 return []
 
         # if no user specified, read all users' crontabs and return complete list of CronJobs
         else:
-            for f in files:
-                crontabFile = _string.join([cronDir, f], sep='')
-                try:
-                    crontab_f = open(crontabFile, 'r')
-                except:
-                    if MODULE_DEBUG == 1: 
-                        _sys.stderr.write("\n\tERROR: failed to open file [%s] for read!\n\n" % crontabFile)
-                    return None
+            files = self._getValidCrontabsFromDirs([cronDir])
 
-                cronJobs = cronJobs + self._parseCrontab(crontab_f)
+            for f in files:
+                crontab_f = open(f, 'r')
+                cronJobs = cronJobs + self._parseCrontab(crontab_f, cronType='user')
+
         return cronJobs
 
 
@@ -225,8 +260,8 @@ class Cronalyzer:
         """
         Parses all crontabs on the system, returning a list of CronJob objects.
         """
-        sysCrons = self.parseSystemCrontab()
-        userCrons = self.parseUserCrontab()
+        sysCrons = self.parseSystemCrontabs()
+        userCrons = self.parseUserCrontabs()
         return sysCrons + userCrons
 
 
