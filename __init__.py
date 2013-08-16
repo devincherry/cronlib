@@ -43,6 +43,7 @@ import os as _os
 import sys as _sys
 import re as _re
 import string as _string
+#import vixiecron as _vc
 
 MODULE_DEBUG = 1
 
@@ -55,18 +56,21 @@ class CronSchedule:
     day_of_month = ''
     month = ''
     day_of_week = ''
+    special = ''
 
-    def __init__(self, minute, hour, dom, month, dow):
+    def __init__(self, special='', minute='', hour='', dom='', month='', dow=''):
         """
         Instantiate a CronSchedule object.
 
-        ARGS:
+        KWARGS:
+        - special: A 'special' timespec, such as '@hourly'
         - minute: The minute spec string (in crontab(5) format)
         - hour: The hour spec string (in crontab(5) format)
         - dom: The day-of-month spec string (in crontab(5) format)
         - month: The month spec string (in crontab(5) format)
         - dow: The day-of-week spec string (in crontab(5) format)
         """
+        self.special = special
         self.minute = minute
         self.hour = hour
         self.day_of_month = dom
@@ -81,13 +85,19 @@ class CronSchedule:
         - form: The desired format of the string (optional). Forms include 'cron', 'list'.
         """
         if form == 'cron':
-            return _string.join([self.minute, self.hour, self.day_of_month, self.month, self.day_of_week])
+            if self.special == '':
+                return _string.join([self.minute, self.hour, self.day_of_month, self.month, self.day_of_week])
+            else:
+                return _string.join(["@", self.special], sep='')
         elif form == 'list':
-            tmpStr = "m   => " + self.minute \
-                 + "\nh   => " + self.hour \
-                 + "\ndom => " + self.day_of_month \
-                 + "\nmon => " + self.month \
-                 + "\ndow => " + self.day_of_week + "\n"
+            if self.special == '':
+                tmpStr = "m   => " + self.minute \
+                     + "\nh   => " + self.hour \
+                     + "\ndom => " + self.day_of_month \
+                     + "\nmon => " + self.month \
+                     + "\ndow => " + self.day_of_week + "\n"
+            else:
+                tmpStr = "special => " + self.special
             return tmpStr
         else:
             return "cronlib: invalid format specified!"    
@@ -160,35 +170,56 @@ class Cronalyzer:
         cronJobs = []
         commentRegex = _re.compile(r'^[\s]{0,}#.*')
         blankLineRegex = _re.compile(r'^[\s]{0,}$')
+        specialTimespecRegex = _re.compile(r'^@(?P<special>[a-z]+)')
 
         # read each line, skipping comment/blank lines, and parse each cron job into a list
         crontab = cron_f.readlines()
         for line in crontab:
-            # skip useless lines
-            m = commentRegex.match(line)
-            if m:
-                continue
-            m = blankLineRegex.match(line)
-            if m:
-                continue
-        
-            # if the line splits into enough parts, parse it into a CronJob and add to the list
-            parts = line.split()                
-            if (cronType == 'system' and len(parts) > 6) or (cronType == 'user' and len(parts) > 5):
-                sched = CronSchedule(
-                    minute = parts.pop(0), 
-                    hour = parts.pop(0),
-                    dom = parts.pop(0),
-                    month = parts.pop(0),
-                    dow = parts.pop(0)
-                )
+            sched = None
+            parts = line.split()
 
-                # get username from filename if user crontab, from 6th field if system crontab
-                if cronType == 'user':
-                    cronUser = cron_f.name.split('/')[-1]
-                elif cronType == 'system':
-                    cronUser = parts.pop(0)
+            try:
+                # skip useless lines
+                m = commentRegex.match(parts[0])
+                if m: continue
 
+                # parse 'special' timespec lines 
+                m = specialTimespecRegex.search(parts[0])
+                if m:
+                    specialTimeval = m.groups()[0]
+                    if specialTimeval in ['hourly','daily','weekly','monthly','yearly','annually']:
+                        sched = CronSchedule(special=specialTimeval)
+                        if cronType == 'user':
+                            parts.pop(0)
+                            cronUser = cron_f.name.split('/')[-1]
+                        elif cronType == 'system':
+                            parts.pop(0)
+                            cronUser = parts.pop(0)
+                    else:
+                        # ignore this line, since special timespec was invalid
+                        continue
+
+                # else, parse 'normal' timespec entries
+                else:        
+                    if (cronType == 'system' and len(parts) > 6) or (cronType == 'user' and len(parts) > 5):
+                        sched = CronSchedule(
+                            minute = parts.pop(0), 
+                            hour = parts.pop(0),
+                            dom = parts.pop(0),
+                            month = parts.pop(0),
+                            dow = parts.pop(0)
+                        )
+                    else:
+                        # parse env options
+                        continue
+    
+                    # get username from filename if user crontab, from 6th field if system crontab
+                    if cronType == 'user':
+                        cronUser = cron_f.name.split('/')[-1]
+                    elif cronType == 'system':
+                        cronUser = parts.pop(0)
+    
+                # finally, append our new CronJob to the list
                 cronJobs.append(
                     CronJob(
                         user = cronUser,
@@ -197,9 +228,9 @@ class Cronalyzer:
                         src_file = cron_f.name
                     )
                 )
-            else:
-                # TODO: parse things like "SHELL=/bin/sh"
-                pass
+            except:
+                # skip this line, since it's invalid
+                continue
 
         return cronJobs
 
@@ -253,10 +284,7 @@ class Cronalyzer:
         elif _os.path.isdir('/var/spool/cron'):
             cronDir = "/var/spool/cron/"
         else:
-            if MODULE_DEBUG == 1:
-                _sys.stderr.write("\n\tERROR: failed to find user crons directory!\n\n")
-            # FIXME: maybe we should be raising an exception...?
-            return []
+            raise Exception("Could not determine path to per-user crontabs!")
 
         # if a user was specified, if user has a crontab, parse & return the CronJobs
         if user:
@@ -267,7 +295,7 @@ class Cronalyzer:
             else:
                 return []
 
-        # if no user specified, read all users' crontabs and return complete list of CronJobs
+        # if no user specified, parse all users' crontabs
         else:
             files = self._getValidCrontabsFromDirs([cronDir])
 
