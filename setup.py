@@ -32,7 +32,7 @@ setup(
     url='http://github.com/youshoulduseunix/cronlib',
     license='GNU LESSER GENERAL PUBLIC LICENSE, version 2.1',
     description='Interface to Unix/Linux Vixie Cron',
-    long_description=open('README.md').read(),
+    long_description=open('README.txt').read(),
     zip_safe=False,
     packages=find_packages(),
 )

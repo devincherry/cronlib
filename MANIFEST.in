@@ -1,3 +1,2 @@
-include README.md LICENCE CHANGES.txt
-recursive-include cronlib *.py *.txt
-recursive-include vixiecron *.py 
+include README.txt LICENSE CHANGES.txt
+recursive-include cronlib *.py 
