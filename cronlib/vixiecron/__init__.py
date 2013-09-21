@@ -17,10 +17,10 @@
 #
 #
 # Devin Cherry
-# <devincherry@gmail.com>
+# <devincherry[at]gmail[dot]com>
 ####################################################################################
 #
-# This is a Python rewrite of Paul Vixie's original work on Vixie Cron.
+# This is a Python rewrite of portions of Paul Vixie's original work on Vixie Cron.
 # All credit for original source should be attributed to Paul Vixie, as indicated
 # in the following copyright notice. All python-specific bugs should be attributed
 # to me (Devin Cherry) ;-)

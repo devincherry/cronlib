@@ -17,7 +17,7 @@
 #
 #
 # Devin Cherry
-# <devincherry@gmail.com>
+# <devincherry[at]gmail[dot]com>
 ####################################################################################
 
 """cronlib
