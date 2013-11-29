@@ -1,1 +1,2 @@
 v0.1a, 2013/09/21 -- Initial release.
+v0.1b, 2013/11/28 -- Major refactor for improved modularity. Just prepping for some new features... :)
