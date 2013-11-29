@@ -34,123 +34,13 @@ and auditing functions, enabling a developer to quickly view/manage cron jobs.
 
 """
 
-__version__ = '0.1a'
+__version__ = '0.1b'
 __author__ = 'Devin Cherry <devincherry@gmail.com>'
 
+MODULE_DEBUG = False
 
-####
-import os as _os
-import sys as _sys
-import re as _re
-import string as _string
-#import vixiecron as _vc
-
-MODULE_DEBUG = 1
-
-class CronSchedule:
-    """
-    A CronSchedule object, holding all individual parts of a CronJob's schedule.
-    """
-    minute = ''
-    hour = ''
-    day_of_month = ''
-    month = ''
-    day_of_week = ''
-    special = ''
-
-    def __init__(self, special='', minute='', hour='', dom='', month='', dow=''):
-        """
-        Instantiate a CronSchedule object.
-
-        KWARGS:
-        - special: A 'special' timespec, such as '@hourly'
-        - minute: The minute spec string (in crontab(5) format)
-        - hour: The hour spec string (in crontab(5) format)
-        - dom: The day-of-month spec string (in crontab(5) format)
-        - month: The month spec string (in crontab(5) format)
-        - dow: The day-of-week spec string (in crontab(5) format)
-        """
-        self.special = special
-        self.minute = minute
-        self.hour = hour
-        self.day_of_month = dom
-        self.month = month
-        self.day_of_week = dow
-
-    def toString(self, form='cron'):
-        """
-        Returns a printable string representation of the CronSchedule.
-
-        KWARGS:
-        - form: The desired format of the string (optional). Forms include 'cron', 'list'.
-        """
-        if form == 'cron':
-            if self.special == '':
-                return _string.join([self.minute, self.hour, self.day_of_month, self.month, self.day_of_week])
-            else:
-                return _string.join(["@", self.special], sep='')
-        elif form == 'list':
-            if self.special == '':
-                tmpStr = "m   => " + self.minute \
-                     + "\nh   => " + self.hour \
-                     + "\ndom => " + self.day_of_month \
-                     + "\nmon => " + self.month \
-                     + "\ndow => " + self.day_of_week + "\n"
-            else:
-                tmpStr = "special => " + self.special
-            return tmpStr
-        else:
-            return "cronlib: invalid format specified!"    
-
-#    def nextRun(self):
-#        """
-#        Return a string representation of the next scheduled run time. 
-#        """
-#        pass
-
-
-class CronJob:
-    """
-    A CronJob object holding a user, command, and CronSchedule for this CronJob.
-    """
-    schedule = None
-    user = '' 
-    command = ''
-    source_file = ''
-
-    def __init__(self, user, command, schedule, src_file):
-        """
-        Instantiate a CronJob object.
-
-        ARGS:
-        - user: The user who this CronJob should run as.
-        - command: The full command-line for the CronJob.
-        - schedule: A CronSchedule object.
-        - src_file: The source file the CronJob was parsed from.
-        """
-        self.user = user
-        self.command = command
-        self.schedule = schedule
-        self.source_file = src_file
-
-    def toString(self, form='system'):
-        """
-        Returns a string representation of the CronJob.
-
-        KWARGS:
-        - form: The desired format of the returned string. Forms include 'user', 'system', 'cronlib'.
-        """
-        tmp = ''
-
-        if form == 'user':
-            tmp = _string.join([self.schedule.toString(), self.user, self.command])
-        elif form == 'system':
-            tmp = _string.join([self.schedule.toString(), self.command])
-        else:
-            tmp = "## cronlib extracted from: %s\n" % self.source_file
-            tmp = tmp + _string.join([self.schedule.toString(), self.user, self.command])
-
-        return tmp
+import os, re, sys, string
+import vixie
 
 
 class Cronalyzer:
@@ -163,75 +53,89 @@ class Cronalyzer:
         pass
 
 
-    def _parseCrontab(self, cron_f, cronType='user'):
+    def parseCrontab(self, cron_f, cron_type):
         """
         Internal parser/cleaner function.
         """
         cronJobs = []
-        commentRegex = _re.compile(r'^[\s]{0,}#.*')
-        blankLineRegex = _re.compile(r'^[\s]{0,}$')
-        specialTimespecRegex = _re.compile(r'^@(?P<special>[a-z]+)')
+        envVars = {}
+
+        # all regexes should ignore leading whitespace...
+        commentRegex = re.compile(r'^[\s]{0,}#.*')
+        blankLineRegex = re.compile(r'^[\s]{0,}$')
+        specialTimespecRegex = re.compile(r'^[\s]{0,}@(?P<special>[a-z]+)')
+
+        # VixieCron v2 allows a max length of 999-chars stored in any env variable, 
+        # excluding the '\0' terminator. (see: cron.h, MAX_ENVSTR)
+        envVarRegex = re.compile(r'^[\s]{0,}(?P<var>SHELL|PATH|MAILTO)=(?P<value>.*)$')
 
         # read each line, skipping comment/blank lines, and parse each cron job into a list
         crontab = cron_f.readlines()
         for line in crontab:
             sched = None
-            parts = line.split()
 
-            try:
-                # skip useless lines
-                m = commentRegex.match(parts[0])
-                if m: continue
-
-                # parse 'special' timespec lines 
-                m = specialTimespecRegex.search(parts[0])
-                if m:
-                    specialTimeval = m.groups()[0]
-                    if specialTimeval in ['hourly','daily','weekly','monthly','yearly','annually']:
-                        sched = CronSchedule(special=specialTimeval)
-                        if cronType == 'user':
-                            parts.pop(0)
-                            cronUser = cron_f.name.split('/')[-1]
-                        elif cronType == 'system':
-                            parts.pop(0)
-                            cronUser = parts.pop(0)
-                    else:
-                        # ignore this line, since special timespec was invalid
-                        continue
-
-                # else, parse 'normal' timespec entries
-                else:        
-                    if (cronType == 'system' and len(parts) > 6) or (cronType == 'user' and len(parts) > 5):
-                        sched = CronSchedule(
-                            minute = parts.pop(0), 
-                            hour = parts.pop(0),
-                            dom = parts.pop(0),
-                            month = parts.pop(0),
-                            dow = parts.pop(0)
-                        )
-                    else:
-                        # parse env options
-                        continue
-    
-                    # get username from filename if user crontab, from 6th field if system crontab
-                    if cronType == 'user':
-                        cronUser = cron_f.name.split('/')[-1]
-                    elif cronType == 'system':
-                        cronUser = parts.pop(0)
-    
-                # finally, append our new CronJob to the list
-                cronJobs.append(
-                    CronJob(
-                        user = cronUser,
-                        command = _string.join(parts).rstrip(),
-                        schedule = sched,
-                        src_file = cron_f.name
-                    )
-                )
-            except:
-                # skip this line, since it's invalid
+            #try:
+            # skip useless lines
+            m = commentRegex.match(line)
+            if m: continue
+            m = blankLineRegex.match(line)
+            if m: continue
+            m = envVarRegex.match(line)
+            if m:
+                envVars[m.group('var')] = m.group('value')
                 continue
 
+            parts = line.split()
+
+            # parse 'special' timespec lines 
+            m = specialTimespecRegex.search(parts[0])
+            if m:
+                specialTimeval = m.groups()[0]
+                if specialTimeval in ['hourly','daily','weekly','monthly','yearly','annually']:
+                    sched = vixie.CronSchedule(special=specialTimeval)
+                    if cron_type == vixie.USER_CRONJOB:
+                        parts.pop(0)
+                        cronUser = cron_f.name.split('/')[-1]
+                    elif cron_type == vixie.SYSTEM_CRONJOB:
+                        parts.pop(0)
+                        cronUser = parts.pop(0)
+                else:
+                    if MODULE_DEBUG: sys.stderr.write("WARNING: special timespec '%s' not recognized.\n" % specialTimeval)
+                    continue
+
+            # else, parse 'normal' timespec entries
+            else:        
+                if (cron_type == vixie.SYSTEM_CRONJOB and len(parts) > 6) or (cron_type == vixie.USER_CRONJOB and len(parts) > 5):
+                    sched = vixie.CronSchedule(
+                        minute = parts.pop(0), 
+                        hour = parts.pop(0),
+                        dom = parts.pop(0),
+                        month = parts.pop(0),
+                        dow = parts.pop(0)
+                    )
+                else:
+                    if MODULE_DEBUG: sys.stderr.write("WARNING: cron_type '%s' not recognized.\n" % cron_type)
+                    continue
+    
+                # get username from filename if user crontab, from 6th field if system crontab
+                if cron_type == vixie.USER_CRONJOB:
+                    cronUser = cron_f.name.split('/')[-1]
+                elif cron_type == vixie.SYSTEM_CRONJOB:
+                    cronUser = parts.pop(0)
+    
+            # finally, create our new CronJob, and append it to the list
+            cj = vixie.CronJob(
+                     user = cronUser,
+                     command = string.join(parts).rstrip(),
+                     schedule = sched,
+                     src_file = cron_f.name
+                 )
+            cj.updateVars(envVars)
+            cronJobs.append(cj)
+            #except:
+            #    if MODULE_DEBUG: sys.stderr.write("WARNING: skipping unparsable cron entry:\n\t[ %s ]\n" % line.split('\n')[0])
+            #    continue
+            
         return cronJobs
 
 
@@ -242,15 +146,26 @@ class Cronalyzer:
         crontabs = []
 
         for d in dirlist:
-            for f in _os.listdir(d):
+            for f in os.listdir(d):
                 # skip hidden files
-                if _re.search("^\..*", f) != None:
+                if re.search("^\..*", f) != None:
                     continue
-                filePath = _string.join([d, f], sep='')
-                if _os.path.isfile(filePath):
+                filePath = string.join([d, f], sep='')
+                if os.path.isfile(filePath):
                     crontabs = crontabs + [filePath]
 
         return crontabs
+
+    def _getUserCronsDir(self):
+        # find the directory where user crons are stored
+        if os.path.isdir('/var/spool/cron/crontabs'):
+            cronDir = "/var/spool/cron/crontabs/"
+        elif os.path.isdir('/var/spool/cron'):
+            cronDir = "/var/spool/cron/"
+        else:
+            raise Exception("Could not determine path to per-user crontabs!")
+
+        return cronDir
 
 
     def parseSystemCrontabs(self):
@@ -262,46 +177,39 @@ class Cronalyzer:
         cronjobs = []
 
         for f in self._getValidCrontabsFromDirs(systemCronDirs):
+            if MODULE_DEBUG: sys.stderr.write("INFO: parsing crontab [%s]\n" % f)
             crontab_f = open(f, 'r')
-            cronjobs = cronjobs + self._parseCrontab(crontab_f, cronType='system')
+            cronjobs = cronjobs + self.parseCrontab(crontab_f, vixie.SYSTEM_CRONJOB)
 
         return cronjobs
 
 
-    def parseUserCrontabs(self, user=None):
+    def parseUserCrontab(self, user):
         """
         Parses a user's crontab, returning a list of CronJob objects.
-        If no user is specified, returns a list of all users' CronJob objects on the system.
 
-        KWARGS:
+        ARGS:
         user -- The user who's crontab should be parsed and returned. (optional)
         """
+        userCronDir = self._getUserCronsDir()
+        crontabFile = string.join([userCronDir, user], sep='')
+        if os.path.isfile(crontabFile):
+            if MODULE_DEBUG: sys.stderr.write("INFO: parsing crontab [%s]\n" % crontabFile)
+            crontab_f = open(crontabFile, 'r')
+            return self.parseCrontab(crontab_f, vixie.USER_CRONJOB)
+        else:
+            return []
+
+
+    def parseAllUserCrontabs(self):
+        userCronDir = self._getUserCronsDir()
+        files = self._getValidCrontabsFromDirs([userCronDir])
         cronJobs = []
 
-        # find the directory where user crons are stored
-        if _os.path.isdir('/var/spool/cron/crontabs'):
-            cronDir = "/var/spool/cron/crontabs/"
-        elif _os.path.isdir('/var/spool/cron'):
-            cronDir = "/var/spool/cron/"
-        else:
-            raise Exception("Could not determine path to per-user crontabs!")
-
-        # if a user was specified, if user has a crontab, parse & return the CronJobs
-        if user:
-            crontabFile = _string.join([cronDir, user], sep='')
-            if _os.path.isfile(crontabFile):
-                crontab_f = open(crontabFile, 'r')
-                return self._parseCrontab(crontab_f, cronType='user')
-            else:
-                return []
-
-        # if no user specified, parse all users' crontabs
-        else:
-            files = self._getValidCrontabsFromDirs([cronDir])
-
-            for f in files:
-                crontab_f = open(f, 'r')
-                cronJobs = cronJobs + self._parseCrontab(crontab_f, cronType='user')
+        for f in files:
+            if MODULE_DEBUG: sys.stderr.write("INFO: parsing crontab [%s]\n" % f)
+            crontab_f = open(f, 'r')
+            cronJobs = cronJobs + self.parseCrontab(crontab_f, vixie.USER_CRONJOB)
 
         return cronJobs
 
@@ -311,7 +219,7 @@ class Cronalyzer:
         Parses all crontabs on the system, returning a list of CronJob objects.
         """
         sysCrons = self.parseSystemCrontabs()
-        userCrons = self.parseUserCrontabs()
+        userCrons = self.parseAllUserCrontabs()
         return sysCrons + userCrons
 
 
