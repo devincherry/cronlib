@@ -26,7 +26,7 @@ from setuptools import find_packages
 
 setup(
     name='cronlib',
-    version='0.1a',
+    version='0.1b',
     author='Devin Cherry',
     author_email='devincherry[at]gmail[dot]com',
     url='http://github.com/youshoulduseunix/cronlib',

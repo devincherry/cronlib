@@ -20,8 +20,12 @@
 # <devincherry[at]gmail[dot]com>
 ####################################################################################
 
-SYSTEM_CRONJOB = 'system'
-USER_CRONJOB = 'user'
+"""vixie
+
+A package of classes for handling Vixie Cron jobs, schedules, and types. 
+
+"""
+
 
 from CronSchedule import CronSchedule
 from CronJob import CronJob

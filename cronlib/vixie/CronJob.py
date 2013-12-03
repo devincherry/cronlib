@@ -25,7 +25,7 @@ import CronTypes
 
 class CronJob:
     """
-    A CronJob object holding a user, command, and CronSchedule for this CronJob.
+    A CronJob object, holding various data about the CronJob entry.
     """
     schedule = None
     user = '' 
@@ -49,12 +49,13 @@ class CronJob:
         self.source_file = src_file
         self.env_vars = {'PATH': '/usr/bin:/bin', 'SHELL': '/bin/sh'}
 
-    def toString(self, form=CronTypes.SYSTEM_CRONJOB):
+    def toString(self, print_format=None):
         """
         Returns a string representation of the CronJob.
 
         KWARGS:
-        - form: The desired format of the returned string. Forms include 'user', 'system', 'cronlib'.
+        - print_format: The desired format of the returned string. 
+                        (i.e. CronTypes.SYSTEM_CRON | CronTypes.USER_CRON | CronTypes.CRONLIB)
         """
         tmp = ''
 
@@ -62,9 +63,9 @@ class CronJob:
         for k in self.env_vars.keys():
             tmp = tmp + k + "=" + self.env_vars[k] + "\n"
 
-        if form == CronTypes.SYSTEM_CRONJOB:
+        if print_format == CronTypes.SYSTEM_CRON:
             tmp = tmp + string.join([self.schedule.toString(), self.user, self.command])
-        elif form == CronTypes.USER_CRONJOB:
+        elif print_format == CronTypes.USER_CRON:
             tmp = tmp + string.join([self.schedule.toString(), self.command])
         else:
             tmp = "## cronlib extracted from: %s\n" % self.source_file + tmp
@@ -72,9 +73,15 @@ class CronJob:
 
         return tmp
 
-    def updateVars(self, varsDict):
-        for k in varsDict.keys():
-            self.env_vars[k] = varsDict[k]
+    def updateVars(self, vars_dict):
+        """
+        Updates the CronJob's environment variables dictionary, replacing or adding variables.
+
+        ARGS:
+        vars_dict -- The dictionary of environment variables/values which apply to this CronJob.
+        """
+        for k in vars_dict.keys():
+            self.env_vars[k] = vars_dict[k]
 
 
 # Modeline

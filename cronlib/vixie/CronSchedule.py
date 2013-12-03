@@ -34,6 +34,7 @@ class CronSchedule:
     day_of_week = ''
     special = ''
 
+
     def __init__(self, special='', minute='', hour='', dom='', month='', dow=''):
         """
         Instantiate a CronSchedule object.
@@ -53,34 +54,23 @@ class CronSchedule:
         self.month = month
         self.day_of_week = dow
 
-    def toString(self, form='cron'):
+
+    def toString(self):
         """
         Returns a printable string representation of the CronSchedule.
-
-        KWARGS:
-        - form: The desired format of the string (optional). Forms include 'cron', 'list'.
         """
-        if form == 'cron':
-            if self.special == '':
-                return string.join([self.minute, self.hour, self.day_of_month, self.month, self.day_of_week])
-            else:
-                return string.join(["@", self.special], sep='')
-        elif form == 'list':
-            if self.special == '':
-                tmpStr = "m   => " + self.minute \
-                     + "\nh   => " + self.hour \
-                     + "\ndom => " + self.day_of_month \
-                     + "\nmon => " + self.month \
-                     + "\ndow => " + self.day_of_week + "\n"
-            else:
-                tmpStr = "special => " + self.special
-            return tmpStr
+        if self.special == '':
+            return string.join([self.minute, self.hour, self.day_of_month, self.month, self.day_of_week])
         else:
-            return "cronlib: invalid format specified!"    
+            return string.join(["@", self.special], sep='')
+
+        return tmpStr
+
 
 #    def nextRun(self):
 #        """
-#        Return a string representation of the next scheduled run time. 
+#        Returns an ISO-8601 formatted representation of the next scheduled run time. 
+#        (i.e. 2013-12-02T12:14:44+00:00)
 #        """
 #        pass
 

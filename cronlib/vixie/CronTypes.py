@@ -20,9 +20,18 @@
 # <devincherry[at]gmail[dot]com>
 ####################################################################################
 
-SYSTEM_CRONJOB = 'system'
-USER_CRONJOB = 'user'
+"""CronTypes
 
+Provides some static variables for specifying 'types' of crontabs.
+For example, a CronTypes.SYSTEM_CRON designates a format that's valid for 
+use in crontabs like /etc/cron.d/<crontab_file>. A USER_CRON is for use 
+in files like /var/spool/cron/<user> files, etc...
+
+"""
+
+SYSTEM_CRON = 'system'
+USER_CRON = 'user'
+CRONLIB = 'cronlib'
 
 # Modeline
 # vim:ts=4:et:ai:sw=4
